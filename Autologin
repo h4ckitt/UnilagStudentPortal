@@ -3,7 +3,6 @@
 username="170805010"
 pass="ihmercyti200$"
 url=$(curl -s "http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/default.aspx")
-#curl -s -L "http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/StudentHomePage.aspx" >> check.html
 declare -i counter=1
 while read -r line || [[ -n $line ]]
     do
@@ -13,12 +12,10 @@ while read -r line || [[ -n $line ]]
         fi
     counter+=1
 done <<< $url
-url=$(sed 's/.*href\=\"//' <<< $url | sed 's/\".*//' | sed 's@<.*@@')
-urrl=$(sed 's@\/default.*@@' <<< $url)
+urrl=$(sed 's/.*href\=\"//' <<< $url | sed 's/\".*//' | sed 's@<.*@@' | sed 's@\/default.*@@')
 viewstate=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | grep -i viewstate| sed '2d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
 viewgen=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
 event_validation=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
-#echo -ne "using $viewstate for viewstate\n using $viewgen for viewstategenerator\n using $event_validation for  eventvalidation"
 curl -D - -s -H 'Connection: keep-alive' -H 'Cache-Control: max-age=0' -H 'Origin: http://studentportal.unilag.edu.ng' -H 'Upgrade-Insecure-Requests: 1' -H 'Content-Type: application/x-www-form-urlencoded' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.71 Safari/537.36' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3' -H 'Referer: http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/default.aspx' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.9' --data-urlencode "PasswordTextBox=$pass" --data-urlencode "UsernameTextBox=$username" --data-urlencode "__EVENTVALIDATION=$event_validation" --data-urlencode "__VIEWSTATE=$viewstate" --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" "http://studentportal.unilag.edu.ng$urrl/StudentLoginPage.aspx" --compressed --insecure > header
 cookie=$(cat header | grep -i cookie | sed 's@.*Set-Cookie\: @@' | sed 's@\;.*@@')
 rm header
