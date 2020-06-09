@@ -1,7 +1,170 @@
 #!/bin/bash
+check(){
+    status_code=$(curl -o /dev/null -s -w "%{http_code}\n" "http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/default.aspx")
+    [ $status_code -eq 302 ] || {
+        echo "Server Error"
+        exit 1
+    }
+    echo "Good"
+}
 
-username="170805010"
-pass="ihmercyti200$"
+generate(){
+    [ -f proceed ]||{
+        echo "Something Is Wrong"
+        exit 1
+    }        
+    viewstate=$(cat proceed | grep -i viewstate| sed '2d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    viewgen=$(cat proceed | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_validation=$(cat proceed | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    status_code=$(curl \
+    -o Docket.pdf -w "%{http_code}" \
+    -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36" \
+    --data-urlencode "__EVENTVALIDATION=$event_validation" \
+    --data-urlencode "__VIEWSTATE=$viewstate" \
+    --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" \
+    --data-urlencode "ctl00$Contents$SubmitButton=Generate Docket" \
+    "http://studentportal.unilag.edu.ng$urrl/Docket.aspx?homepage=false")
+    rm -rf proceed
+}
+Attempt(){
+    status_code=$(curl -o proceed -w "%{http_code}" --retry 20 --retry-delay 5 --connect-timeout 15 -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36" "http://studentportal.unilag.edu.ng$urrl/Docket.aspx?homepage=false")
+    [ $status_code -eq 200 ]||{
+        echo "Something Went Wrong"
+        exit 1
+    }
+    [ ! -z "$(grep questionnaire proceed)" ]||{
+        [ $count -gt 0 ]||{
+            mv proceed Docket.pdf
+            zip -j -r Docket.zip Docket.pdf
+            signal=1
+            return
+        }
+        generate
+        zip -j -r Docket.zip Docket.pdf
+        signal=1
+        return
+    }
+    firstPass
+    }
+
+firstPass(){
+    [ -f proceed ]||{
+        echo "Something Is Wrong"
+        exit 1
+    }
+    viewstate=$(cat proceed | grep -i viewstate| sed '2d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    viewgen=$(cat proceed | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_validation=$(cat proceed | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    
+    status_code=$(curl \
+    -o proceed -w "%{http_code}\n" \
+    -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36" \
+    --data-urlencode "__EVENTVALIDATION=$event_validation" \
+    --data-urlencode "__VIEWSTATE=$viewstate" \
+    --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" \
+    --data-urlencode "ctl00$Contents$SubmitButton=proceed" \
+    "http://studentportal.unilag.edu.ng$urrl/EvaluationQuestionnaire.aspx?homepage=false")
+    [ $status_code -eq 200 ]||{
+        echo "Something Went Wrong"
+        exit 1
+    }
+    x=$(cat proceed | grep -i course)
+    while [ $(wc -l <<< $x) != 1 ]; do
+        x=$(sed 1d <<< $x)
+    done
+    x=$(sed 's/.*auto">//' <<< $x | sed 's/<.*//')
+    curl -s -d "text=Currently Filling $x" -d "chat_id=$Chat_Id" "https://api.telegram.org/bot$token/sendMessage" >/dev/null 2>&1
+    secondPass
+}
+
+secondPass(){
+    [ -f proceed ]||{
+        echo "Something Is Wrong"
+        exit 1
+    }
+    cat proceed | grep "option value" | sed 's/[^0-9]//g' > codes
+    line=$((RANDOM%$(wc -l < codes)))
+    [ ! $line -eq 0 ] ||{
+        line=$((line+1))
+    }
+    choice=$(sed ''$line'q;d' codes)
+    course_code=$(cat proceed | grep -i "selected" | sed 's/.*value=\"//' | sed 's/\>.*//')
+    echo "Course Code: $course_code"
+    viewstate=$(cat proceed | grep -i viewstate| sed '2d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    viewgen=$(cat proceed | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_validation=$(cat proceed | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_target="ctl00$Contents$CourseCode"
+    last_focus=""
+    event_arg=""
+    status_code=$(curl \
+    -o proceed -w "%{http_code}" \
+    -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36" \
+    --data-urlencode "__EVENTARGUMENT=$event_arg" \
+    --data-urlencode "__EVENTVALIDATION=$event_validation" \
+    --data-urlencode "__VIEWSTATE=$viewstate" \
+    --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" \
+    --data-urlencode "__LASTFOCUS=$last_focus" \
+    --data-urlencode "__EVENTTARGET=$event_target" \
+    --data-urlencode 'ctl00$Contents$CourseCode'=$course_code \
+    --data-urlencode 'ctl00$Contents$LecturerCombo'=$choice \
+    --data-urlencode 'ctl00$Contents$SubmitButton'="proceed" \
+    "http://studentportal.unilag.edu.ng$urrl/EvaluationQuestionnaire.aspx?homepage=false")
+    [ $status_code -eq 200 ]||{
+        echo "Something Went Wrong"
+        exit 1
+    }
+    submit
+}
+
+submit(){
+    [ -f proceed ]||{
+        echo "Something Is Wrong"
+        exit 1
+    }
+    viewstate=$(cat proceed | grep -i viewstate| sed '2d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    viewgen=$(cat proceed | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_validation=$(cat proceed | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
+    event_target=""
+    last_focus=""
+    event_arg=""
+    status_code=$(curl \
+    -o proceed -w "%{http_code}" \
+    -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36" \
+    --data-urlencode "__EVENTARGUMENT=$event_arg" \
+    --data-urlencode "__EVENTVALIDATION=$event_validation" \
+    --data-urlencode "__VIEWSTATE=$viewstate" \
+    --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" \
+    --data-urlencode "__LASTFOCUS=$last_focus" \
+    --data-urlencode "__EVENTTARGET=$event_target" \
+    --data-urlencode 'ctl00$Contents$CourseCode'=$course_code \
+    --data-urlencode 'ctl00$Contents$LecturerCombo'=$choice \
+    --data-urlencode 'ctl00$Contents$Button1'="Submit" \
+    --data-urlencode "92=QA0000284" \
+    --data-urlencode "93=QA0000289" \
+    --data-urlencode "94=QA0000294" \
+    --data-urlencode "95=QA0000301" \
+    --data-urlencode "96=QA0000314" \
+    --data-urlencode "97=QA0000325" \
+    --data-urlencode "98=QA0000335" \
+    --data-urlencode "99=QA0000315" \
+    --data-urlencode "100=QA0000307" \
+    --data-urlencode "101=QA0000338" \
+    --data-urlencode "102=QA0000343" \
+    --data-urlencode "103=QA0000330" \
+    --data-urlencode "104=QA0000306" \
+    --data-urlencode "105=yes" \
+    --data-urlencode "106=nil" \
+    "http://studentportal.unilag.edu.ng$urrl/EvaluationQuestionnaire.aspx?homepage=false")
+    [ $status_code -eq 200 ]||{
+        echo "Something Went Wrong"
+        exit 1
+    }
+}
+
+
+details(){
+username="xxxxxxxxx"
+pass="xxxxxxxxxx"
 url=$(curl -s "http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/default.aspx")
 declare -i counter=1
 while read -r line || [[ -n $line ]]
@@ -17,11 +180,17 @@ viewstate=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | gre
 viewgen=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | grep -i viewstate| sed '1d' | sed 's|.*value\=\"||' | sed 's@\".*@@')
 event_validation=$(curl -s "http://studentportal.unilag.edu.ng$urrl/default.aspx" | grep -i eventvalidation | sed 's|.*value\=\"||' | sed 's@\".*@@')
 curl -D - -s -H 'Connection: keep-alive' -H 'Cache-Control: max-age=0' -H 'Origin: http://studentportal.unilag.edu.ng' -H 'Upgrade-Insecure-Requests: 1' -H 'Content-Type: application/x-www-form-urlencoded' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.71 Safari/537.36' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3' -H 'Referer: http://studentportal.unilag.edu.ng/(S(lkynzhoc3fox21jdy343vwl0))/default.aspx' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.9' --data-urlencode "PasswordTextBox=$pass" --data-urlencode "UsernameTextBox=$username" --data-urlencode "__EVENTVALIDATION=$event_validation" --data-urlencode "__VIEWSTATE=$viewstate" --data-urlencode "__VIEWSTATEGENERATOR=$viewgen" "http://studentportal.unilag.edu.ng$urrl/StudentLoginPage.aspx" --compressed --insecure > header
-cookie=$(cat header | grep -i cookie | sed 's@.*Set-Cookie\: @@' | sed 's@\;.*@@')
+cookie=$(cat header | grep -i cookie | sed 's@.*Set-Cookie\:@@' | sed 's@\;.*@@')
 rm header
-#curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/StudentHomePage.aspx" > check.html
+}
+
+if [ "$1" == "courseform" -o -f temp ]; then
+    details
 reg=$(curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/RegistrationListPage.aspx")
-echo "Choose Course Registration To Download"
+if [ ! -f temp ]; then
+echo "Choose Course Registration To Download" >> temp
+echo "" >> temp
+fi
 declare -i counter=1
 z=()
 while read -r list || [[ -n $list ]]
@@ -31,12 +200,44 @@ while read -r list || [[ -n $list ]]
             x=$(sed 's|.*?||' <<< $list | sed 's|\".*||')
             z+=($x)
             x=$(echo $x | tr '&' ' ')
-            echo "$counter. $x"
+            echo "$counter. $x" >> temp
             counter+=1
         fi
 done <<< $reg
-echo -ne "Choose An Option ==> "
-read -r opt
-y=$(echo ${z[$((opt-1))]})
+if [[ $1 =~ [[:digit:]] ]]; then
+y=$(echo ${z[$(($1-1))]})
 url="PrintRegistrationPage.aspx?$y"
-curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/$url" -o MyReg.pdf
+curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/$url" -o CourseRegistration.pdf  
+rm -rf temp
+fi
+fi
+
+case $1 in
+    "verify")
+    details
+    curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/StudentHomePage.aspx" > stuff.html
+    ver=$(cat stuff.html | grep -i -w welcome | sed 's/\,//2')
+    echo $ver
+    rm -rf stuff.html
+    ;;
+    "check")
+    echo $(check)
+    ;;
+    "biodata")
+    details
+    curl -s -L -H "Cookie: $cookie" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" -H "Accept-Encoding: " -H "Accept-Langauge: en-US,en;q=0.5" -H "Connection: keep-alive" -H "Host: studentportal.unilag.edu.ng" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36"  "http://studentportal.unilag.edu.ng$urrl/PrintBiodataPage.aspx" -o Biodata.pdf
+    ;;
+    "docket")
+    signal=0
+    details    
+    declare -i count=0
+while : ; do
+    Attempt
+    [ $signal != 1 ]||{        
+        break
+        exit 0
+    }
+    count+=1
+done
+    ;;
+esac
